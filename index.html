@@ -18,58 +18,124 @@
           <p class="subtitle">Browse games by season, region, and round.</p>
         </div>
         <div class="account-area">
-          <span id="account-label" class="account-label">Public view</span>
-          <button id="auth-open" class="button button-secondary" type="button">Editor sign in</button>
-          <button id="sign-out" class="button button-secondary hidden" type="button">Sign out</button>
+          <span class="account-label">Public editing enabled</span>
         </div>
       </header>
+      <nav class="page-nav" aria-label="Main navigation">
+        <button id="results-nav" class="page-nav-button is-active" type="button" aria-current="page">Results</button>
+        <button id="standings-nav" class="page-nav-button" type="button">Standings</button>
+      </nav>
 
       <main>
-        <section class="filters panel" aria-labelledby="filters-heading">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">FIND A GAME</p>
-              <h2 id="filters-heading">Filters</h2>
+        <section id="results-page" class="page-view">
+          <section class="filters panel" aria-labelledby="filters-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">FIND A GAME</p>
+                <h2 id="filters-heading">Filters</h2>
+              </div>
+              <button id="clear-filters" class="text-button" type="button">Clear filters</button>
             </div>
-            <button id="clear-filters" class="text-button" type="button">Clear filters</button>
+            <div class="filter-grid">
+              <label>Season
+                <select id="season-filter"><option value="">All seasons</option></select>
+              </label>
+              <label>Region
+                <select id="region-filter"><option value="">All regions</option></select>
+              </label>
+              <label>Round
+                <select id="round-filter"><option value="">All rounds</option></select>
+              </label>
+              <label>Game status
+                <select id="played-filter">
+                  <option value="">All games</option>
+                  <option value="played">Played</option>
+                  <option value="unplayed">Not played</option>
+                </select>
+              </label>
+              <label class="team-search">Team name
+                <input id="team-filter" type="search" placeholder="Search either team…" autocomplete="off" />
+              </label>
+            </div>
+          </section>
+
+          <p class="public-edit-warning" role="note">Anyone who can access this page can change score overrides and mark games as played.</p>
+
+          <div class="results-heading">
+            <div>
+              <h2>Rounds</h2>
+              <p id="results-summary" class="muted">Loading games…</p>
+            </div>
+            <div class="round-actions">
+              <button id="mark-filtered-played" class="text-button" type="button">Mark matching unplayed games played</button>
+              <span aria-hidden="true">·</span>
+              <button id="expand-all" class="text-button" type="button">Expand all</button>
+              <span aria-hidden="true">·</span>
+              <button id="collapse-all" class="text-button" type="button">Collapse all</button>
+            </div>
           </div>
-          <div class="filter-grid">
-            <label>Season
-              <select id="season-filter"><option value="">All seasons</option></select>
-            </label>
-            <label>Region
-              <select id="region-filter"><option value="">All regions</option></select>
-            </label>
-            <label>Round
-              <select id="round-filter"><option value="">All rounds</option></select>
-            </label>
-            <label>Game status
-              <select id="played-filter">
-                <option value="">All games</option>
-                <option value="played">Played</option>
-                <option value="unplayed">Not played</option>
-              </select>
-            </label>
-            <label class="team-search">Team name
-              <input id="team-filter" type="search" placeholder="Search either team…" autocomplete="off" />
-            </label>
-          </div>
+
+          <div id="status-message" class="status-message" role="status" aria-live="polite">Connecting to the database…</div>
+          <section id="rounds-list" class="rounds-list" aria-label="Games grouped by round"></section>
+
         </section>
 
-        <div class="results-heading">
-          <div>
-            <h2>Rounds</h2>
-            <p id="results-summary" class="muted">Loading games…</p>
+        <section id="standings-page" class="page-view" hidden aria-labelledby="standings-heading">
+          <div class="standings-heading">
+            <div>
+              <p class="eyebrow">LEAGUE TABLE</p>
+              <h2 id="standings-heading">Standings</h2>
+              <p id="standings-summary" class="muted">Choose a season and region to view standings.</p>
+            </div>
           </div>
-          <div class="round-actions">
-            <button id="expand-all" class="text-button" type="button">Expand all</button>
-            <span aria-hidden="true">·</span>
-            <button id="collapse-all" class="text-button" type="button">Collapse all</button>
+          <section class="filters panel standings-filters" aria-label="Standings filters">
+            <div class="filter-grid">
+              <label>Season
+                <select id="standings-season-filter"><option value="">All seasons</option></select>
+              </label>
+              <label>Region
+                <select id="standings-region-filter"><option value="">All regions</option></select>
+              </label>
+            </div>
+          </section>
+          <div class="standings-controls">
+            <label>Sort by
+              <select id="standings-sort">
+                <option value="default">Default order (season, wins, rating)</option>
+                <option value="name">Team</option>
+                <option value="region">Region</option>
+                <option value="season_id">Season</option>
+                <option value="rating">Rating</option>
+                <option value="proxy">Proxy</option>
+                <option value="wins">Wins</option>
+                <option value="losses">Losses</option>
+              </select>
+            </label>
+            <label>Direction
+              <select id="standings-direction">
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
+              </select>
+            </label>
           </div>
-        </div>
-
-        <div id="status-message" class="status-message" role="status" aria-live="polite">Connecting to the database…</div>
-        <section id="rounds-list" class="rounds-list" aria-label="Games grouped by round"></section>
+          <div id="standings-status" class="status-message" role="status" aria-live="polite"></div>
+          <div class="table-scroll panel">
+            <table class="standings-table">
+              <thead>
+                <tr>
+                  <th scope="col">Season</th>
+                  <th scope="col">Team</th>
+                  <th scope="col">Region</th>
+                  <th scope="col">Rating</th>
+                  <th scope="col">Proxy</th>
+                  <th scope="col">Wins</th>
+                  <th scope="col">Losses</th>
+                </tr>
+              </thead>
+              <tbody id="standings-rows"></tbody>
+            </table>
+          </div>
+        </section>
 
         <footer class="footer">
           <span>Sports Results</span>
@@ -77,28 +143,6 @@
         </footer>
       </main>
     </div>
-
-    <dialog id="auth-dialog" class="dialog">
-      <form id="auth-form" class="dialog-card">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow">EDITOR ACCESS</p>
-            <h2>Sign in</h2>
-          </div>
-          <button id="auth-close" class="icon-button" type="button" aria-label="Close sign-in dialog">×</button>
-        </div>
-        <p class="muted">Sign in with your Neon Auth account to edit score overrides.</p>
-        <label>Email
-          <input id="auth-email" type="email" autocomplete="username" required />
-        </label>
-        <label>Password
-          <input id="auth-password" type="password" autocomplete="current-password" required />
-        </label>
-        <p id="auth-error" class="form-error" role="alert"></p>
-        <button id="auth-submit" class="button button-primary button-full" type="submit">Sign in</button>
-        <p class="fine-print">Editing is limited to the authorized account and enforced by database permissions.</p>
-      </form>
-    </dialog>
 
     <dialog id="score-dialog" class="dialog">
       <form id="score-form" class="dialog-card">
@@ -111,10 +155,10 @@
         </div>
         <p id="score-dialog-description" class="muted"></p>
         <input id="editing-game-id" type="hidden" />
-        <label id="home-score-label">Home score override
+        <label>Home score override
           <input id="home-score-input" type="number" step="1" inputmode="numeric" />
         </label>
-        <label id="visitor-score-label">Visitor score override
+        <label>Visitor score override
           <input id="visitor-score-input" type="number" step="1" inputmode="numeric" />
         </label>
         <p class="fine-print">Leave both fields blank to use performance values for the winner comparison. Performance values cannot be edited here.</p>
