@@ -1,20 +1,58 @@
 import './style.css';
 import { createClient } from '@neondatabase/neon-js';
 
-const CONFIG = {
-  dataApiUrl: 'https://ep-mute-waterfall-aemei0yf.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
-  authUrl: 'https://ep-mute-waterfall-aemei0yf.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth',
+const LEAGUES = {
+  football: {
+    label: 'Football',
+    title: 'Football results',
+    dataApiUrl: 'https://ep-mute-waterfall-aemei0yf.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
+    authUrl: 'https://ep-mute-waterfall-aemei0yf.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth',
+    gameTable: 'RegionalGame',
+    teamTable: 'TeamSeason',
+    standingsTable: 'RegionalTeamsFullView',
+    hasProxy: true,
+  },
+  'baseball-regional': {
+    label: 'Baseball-Regional',
+    title: 'Baseball-Regional results',
+    dataApiUrl: 'https://ep-super-bird-aebryt44.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
+    gameTable: 'RegionalGame',
+    teamTable: 'TeamSeason',
+    standingsTable: 'RegionalTeamsFullView',
+    hasProxy: false,
+  },
+  'baseball-national': {
+    label: 'Baseball-National',
+    title: 'Baseball-National results',
+    dataApiUrl: 'https://ep-super-bird-aebryt44.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
+    gameTable: 'NationalGame',
+    teamTable: 'TeamSeason',
+    standingsTable: 'NationalTeamsFullView',
+    teamNamesTable: 'Team',
+    gameTeamIdField: 'nat_id',
+    teamNameIdField: 'team_id',
+    gameScopeField: 'tier',
+    standingsScopeField: 'tier',
+    scopeLabel: 'Tier',
+    teamSeasonHasName: false,
+    hasProxy: false,
+  },
 };
 
-const client = createClient({
-  auth: {
-    url: CONFIG.authUrl,
-    allowAnonymous: true,
-  },
-  dataApi: {
-    url: CONFIG.dataApiUrl,
-  },
-});
+const clients = new Map();
+function getClient(leagueKey) {
+  if (!clients.has(leagueKey)) {
+    const config = LEAGUES[leagueKey];
+    const authUrl = config.authUrl ?? config.dataApiUrl
+      .replace('.apirest.', '.neonauth.')
+      .replace(/\/rest\/v1\/?$/, '/auth');
+    clients.set(leagueKey, createClient({
+      auth: { url: authUrl, allowAnonymous: true },
+      dataApi: { url: config.dataApiUrl },
+    }));
+  }
+  return clients.get(leagueKey);
+}
 
 const $ = (selector) => document.querySelector(selector);
 const state = {
@@ -24,6 +62,8 @@ const state = {
   standingsLoaded: false,
   openRounds: new Set(),
   editingGame: null,
+  activeLeague: 'football',
+  loadingLeague: null,
 };
 
 const els = {
@@ -52,6 +92,16 @@ const els = {
   standingsSummary: $('#standings-summary'),
   standingsStatus: $('#standings-status'),
   standingsRows: $('#standings-rows'),
+  appLabel: $('#app-label'),
+  appTitle: $('#app-title'),
+  appSubtitle: $('#app-subtitle'),
+  appFooter: $('#app-footer'),
+  proxyHeader: $('#proxy-header'),
+  proxySort: $('#proxy-sort'),
+  gameScopeLabel: $('#game-scope-label'),
+  standingsScopeLabel: $('#standings-scope-label'),
+  standingsScopeHeader: $('#standings-scope-header'),
+  leagueNav: [...document.querySelectorAll('[data-league]')],
 };
 
 function setStatus(message, kind = '') {
@@ -87,44 +137,78 @@ function getTeamName(regId, seasonId) {
   return state.teams.get(teamSeasonKey(regId, seasonId))?.name ?? `Team ${regId}`;
 }
 
-async function loadData() {
+async function loadData(leagueKey = state.activeLeague) {
+  const config = LEAGUES[leagueKey];
+  const client = getClient(leagueKey);
+  const gameTeamIdField = config.gameTeamIdField ?? 'reg_id';
+  const teamNameIdField = config.teamNameIdField;
+  const scopeField = config.gameScopeField ?? 'region';
+  const teamSeasonColumns = config.teamSeasonHasName === false
+    ? `${gameTeamIdField}, ${teamNameIdField}, season_id, rating`
+    : 'reg_id, season_id, name, rating';
   setStatus('Loading games and teams…');
   try {
-    const [gamesResult, teamsResult] = await Promise.all([
-      client.from('RegionalGame')
-        .select('id, region, round, played, home, visitor, h_perf, v_perf, override_h_score, override_v_score, season_id')
+    const results = await Promise.all([
+      client.from(config.gameTable)
+        .select(`id, ${scopeField}, round, played, home, visitor, h_perf, v_perf, override_h_score, override_v_score, season_id`)
         .order('season_id', { ascending: false })
         .order('round', { ascending: true }),
-      client.from('TeamSeason').select('reg_id, season_id, name, rating').order('name', { ascending: true }),
+      client.from(config.teamTable).select(teamSeasonColumns).order('season_id', { ascending: false }),
+      ...(config.teamNamesTable
+        ? [client.from(config.teamNamesTable).select('id, name').order('name', { ascending: true })]
+        : []),
     ]);
+    const [gamesResult, teamsResult, teamNamesResult] = results;
 
     if (gamesResult?.error) throw gamesResult.error;
     if (teamsResult?.error) throw teamsResult.error;
+    if (teamNamesResult?.error) throw teamNamesResult.error;
+    if (leagueKey !== state.activeLeague) return;
 
-    state.games = gamesResult?.data ?? [];
-    state.teams = new Map((teamsResult?.data ?? []).map((team) => [
-      teamSeasonKey(team.reg_id, team.season_id),
-      { name: team.name, rating: toNumberOrNull(team.rating) },
+    const teamNames = new Map((teamNamesResult?.data ?? []).map((team) => [
+      String(team.id),
+      team.name,
     ]));
+    const teamSeasonByGameId = new Map((teamsResult?.data ?? []).map((team) => {
+      const gameTeamId = team[gameTeamIdField];
+      const nameTeamId = teamNameIdField ? team[teamNameIdField] : gameTeamId;
+      return [
+        teamSeasonKey(gameTeamId, team.season_id),
+        {
+          name: team.name ?? teamNames.get(String(nameTeamId)),
+          rating: toNumberOrNull(team.rating),
+        },
+      ];
+    }));
+    state.games = (gamesResult?.data ?? []).map((game) => ({
+      ...game,
+      region: game[scopeField],
+    }));
+    state.teams = teamSeasonByGameId;
     populateFilters();
     renderGames();
     setStatus(state.games.length ? '' : 'No games were returned. Check database permissions and table names.', state.games.length ? '' : 'notice');
     els.lastUpdated.textContent = `Loaded ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
   } catch (error) {
+    if (leagueKey !== state.activeLeague) return;
     console.error('Could not load sports data:', error);
     setStatus(
-      'Could not load games. Check the Data API connection, Neon Auth anonymous access, table exposure, and SELECT policies. See README.md for setup checks.',
+      `Could not load games. Check the Data API connection, Neon Auth anonymous access, ${config.gameTable}, ${config.teamTable}${config.teamNamesTable ? `, and ${config.teamNamesTable}` : ''} exposure, and SELECT policies. See README.md for setup checks.`,
       'error',
     );
     els.summary.textContent = 'Database connection needs attention.';
   }
 }
 
-function populateSelect(select, values, allLabel, formatter = (value) => value) {
+function populateSelect(select, values, allLabel, formatter = (value) => value, defaultValue = null) {
   const previous = select.value;
   select.replaceChildren(new Option(allLabel, ''));
   values.forEach((value) => select.add(new Option(formatter(value), String(value))));
-  if (values.some((value) => String(value) === previous)) select.value = previous;
+  if (previous && values.some((value) => String(value) === previous)) {
+    select.value = previous;
+  } else if (defaultValue !== null && values.some((value) => String(value) === defaultValue)) {
+    select.value = defaultValue;
+  }
 }
 
 function compareStandingsValues(left, right, direction) {
@@ -183,6 +267,8 @@ function filteredStandings() {
 
 function renderStandings() {
   const standings = filteredStandings();
+  const config = LEAGUES[state.activeLeague];
+  const { hasProxy } = config;
   els.standingsSummary.textContent = `${standings.length} team${standings.length === 1 ? '' : 's'}`;
   els.standingsDirection.disabled = els.standingsSort.value === 'default';
   els.standingsRows.innerHTML = standings.length
@@ -192,26 +278,40 @@ function renderStandings() {
         <td>${escapeHtml(team.name ?? '—')}</td>
         <td>${escapeHtml(team.region ?? '—')}</td>
         <td>${escapeHtml(displayNumber(team.rating))}</td>
-        <td>${escapeHtml(displayNumber(team.proxy))}</td>
+        ${hasProxy ? `<td>${escapeHtml(displayNumber(team.proxy))}</td>` : ''}
         <td>${escapeHtml(displayNumber(team.wins))}</td>
         <td>${escapeHtml(displayNumber(team.losses))}</td>
       </tr>`).join('')
-    : '<tr><td class="table-empty" colspan="7">No teams match these filters.</td></tr>';
+    : `<tr><td class="table-empty" colspan="${hasProxy ? 7 : 6}">No teams match these filters.</td></tr>`;
 }
 
-async function loadStandings() {
+async function loadStandings(leagueKey = state.activeLeague) {
   if (state.standingsLoaded) return;
+  const config = LEAGUES[leagueKey];
+  const client = getClient(leagueKey);
   els.standingsStatus.textContent = 'Loading standings…';
   els.standingsStatus.className = 'status-message';
+  els.standingsStatus.hidden = false;
   try {
-    const result = await client.from('RegionalTeamsFullView')
-      .select('season_id, name, region, rating, proxy, wins, losses')
+    const result = await client.from(config.standingsTable)
+      .select(config.gameScopeField ? '*' : (config.hasProxy
+        ? 'season_id, name, region, rating, proxy, wins, losses'
+        : 'season_id, name, region, rating, wins, losses'))
       .order('season_id', { ascending: false })
       .order('wins', { ascending: false })
       .order('rating', { ascending: false });
 
     if (result?.error) throw result.error;
-    state.standings = result?.data ?? [];
+    if (leagueKey !== state.activeLeague) return;
+    const scopeField = config.standingsScopeField ?? 'region';
+    state.standings = (result?.data ?? []).map((team) => ({
+      ...team,
+      name: team.name ?? state.teams.get(teamSeasonKey(
+        team[config.standingsTeamIdField ?? config.gameTeamIdField ?? 'reg_id'],
+        team.season_id,
+      ))?.name,
+      region: team[scopeField],
+    }));
     state.standingsLoaded = true;
 
     const seasons = [...new Set(state.standings
@@ -220,17 +320,81 @@ async function loadStandings() {
       .sort((a, b) => compareStandingsValues(a, b, 'desc'));
     const regions = [...new Set(state.standings.map((team) => team.region).filter(Boolean))]
       .sort((a, b) => String(a).localeCompare(String(b)));
-    populateSelect(els.standingsSeason, seasons, 'All seasons');
-    populateSelect(els.standingsRegion, regions, 'All regions');
+    populateSelect(els.standingsSeason, seasons, 'All seasons', (value) => value, '1');
+    populateSelect(els.standingsRegion, regions, `All ${config.scopeLabel?.toLowerCase() ?? 'regions'}`);
 
     els.standingsStatus.textContent = '';
     els.standingsStatus.hidden = true;
     renderStandings();
   } catch (error) {
+    if (leagueKey !== state.activeLeague) return;
     console.error('Could not load standings:', error);
-    els.standingsStatus.textContent = 'Could not load standings. Check that RegionalTeamsFullView is exposed to the Data API and has the required SELECT permissions.';
+    els.standingsStatus.textContent = `Could not load standings. Check that ${config.standingsTable} is exposed to the Data API and has the required SELECT permissions.`;
     els.standingsStatus.className = 'status-message error';
     els.standingsStatus.hidden = false;
+  }
+}
+
+async function selectLeague(leagueKey, updateHash = true) {
+  if (!LEAGUES[leagueKey]) return;
+  if (leagueKey === state.activeLeague
+    && (state.games.length || state.loadingLeague === leagueKey)) return;
+  state.activeLeague = leagueKey;
+  state.loadingLeague = leagueKey;
+  state.games = [];
+  state.teams = new Map();
+  state.standings = [];
+  state.standingsLoaded = false;
+  state.openRounds = new Set();
+  state.editingGame = null;
+  if (els.scoreDialog.open) els.scoreDialog.close();
+  els.season.value = '';
+  els.region.value = '';
+  els.round.value = '';
+  els.played.value = '';
+  els.team.value = '';
+  els.standingsSeason.value = '';
+  els.standingsRegion.value = '';
+  if (!LEAGUES[leagueKey].hasProxy && els.standingsSort.value === 'proxy') {
+    els.standingsSort.value = 'default';
+  }
+
+  const config = LEAGUES[leagueKey];
+  els.appLabel.textContent = `${config.label.toUpperCase()} TRACKER`;
+  els.appTitle.textContent = config.title;
+  document.title = config.title;
+  const scopeLabel = config.scopeLabel ?? 'Region';
+  els.appSubtitle.textContent = `Browse ${config.label} games and standings by season, ${scopeLabel.toLowerCase()}, and round.`;
+  els.appFooter.textContent = `${config.label} Results`;
+  els.gameScopeLabel.textContent = config.scopeLabel ?? 'Region';
+  els.standingsScopeLabel.textContent = config.scopeLabel ?? 'Region';
+  els.standingsScopeHeader.textContent = config.scopeLabel ?? 'Region';
+  [...els.standingsSort.options].find((option) => option.value === 'region').textContent = config.scopeLabel ?? 'Region';
+  els.proxyHeader.hidden = !config.hasProxy;
+  els.proxySort.hidden = !config.hasProxy;
+  els.leagueNav.forEach((button) => {
+    const isActive = button.dataset.league === leagueKey;
+    button.classList.toggle('is-active', isActive);
+    if (isActive) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  els.standingsStatus.textContent = '';
+  els.standingsStatus.hidden = true;
+  els.standingsRows.replaceChildren();
+  els.rounds.replaceChildren();
+  els.summary.textContent = 'Loading games…';
+  els.lastUpdated.textContent = '';
+  if (updateHash && window.location.hash !== `#${leagueKey}`) {
+    window.history.replaceState(null, '', `#${leagueKey}`);
+  }
+
+  try {
+    await loadData(leagueKey);
+    if (leagueKey === state.activeLeague && !els.standingsPage.hidden) {
+      await loadStandings(leagueKey);
+    }
+  } finally {
+    if (state.loadingLeague === leagueKey) state.loadingLeague = null;
   }
 }
 
@@ -257,8 +421,8 @@ function populateFilters() {
     .sort((a, b) => String(a).localeCompare(String(b)));
   const rounds = [...new Set(state.games.map((game) => game.round).filter((v) => v !== null))]
     .sort((a, b) => Number(a) - Number(b));
-  populateSelect(els.season, seasons, 'All seasons');
-  populateSelect(els.region, regions, 'All regions');
+  populateSelect(els.season, seasons, 'All seasons', (value) => value, '1');
+  populateSelect(els.region, regions, `All ${LEAGUES[state.activeLeague].scopeLabel?.toLowerCase() ?? 'regions'}`);
   populateSelect(els.round, rounds, 'All rounds', (value) => `Round ${value}`);
 }
 
@@ -357,7 +521,7 @@ function gameCard(game) {
   return `
     <article class="game-card">
       <div class="game-meta">
-        <span class="region-tag">${escapeHtml(game.region || 'No region')}</span>
+        <span class="region-tag">${escapeHtml(game.region || `No ${LEAGUES[state.activeLeague].scopeLabel?.toLowerCase() ?? 'region'}`)}</span>
         <span class="game-status ${game.played === true ? 'is-played' : ''}">${playedLabel}</span>
       </div>
       <div class="matchup">
@@ -443,16 +607,19 @@ async function saveScoreOverrides(event) {
   els.scoreSave.disabled = true;
   els.scoreSave.textContent = 'Saving…';
   els.scoreError.textContent = '';
+  const leagueKey = state.activeLeague;
+  const game = state.editingGame;
   try {
-    const result = await client.from('RegionalGame')
+    const result = await getClient(leagueKey).from(LEAGUES[leagueKey].gameTable)
       .update({
         override_h_score: homeScore,
         override_v_score: visitorScore,
       })
-      .eq('id', state.editingGame.id)
+      .eq('id', game.id)
       .select('id, override_h_score, override_v_score');
 
     if (result?.error) throw result.error;
+    if (leagueKey !== state.activeLeague) return;
     if (!result?.data?.length) {
       throw new Error('No row was updated. The database may have rejected the update or the game ID was not found.');
     }
@@ -467,6 +634,7 @@ async function saveScoreOverrides(event) {
     setStatus('Score overrides saved.', 'success');
     window.setTimeout(() => { if (els.status.textContent === 'Score overrides saved.') setStatus(''); }, 3500);
   } catch (error) {
+    if (leagueKey !== state.activeLeague) return;
     console.error('Could not update score overrides:', error);
     els.scoreError.textContent = 'Save failed. Check that anonymous database updates are enabled for the score override columns.';
   } finally {
@@ -484,15 +652,17 @@ function matchesSelectedGameScope(game, filters) {
 async function markGamePlayed(gameId, button) {
   const game = state.games.find((item) => String(item.id) === String(gameId));
   if (!game || game.played === true) return;
+  const leagueKey = state.activeLeague;
 
   button.disabled = true;
   try {
-    const result = await client.from('RegionalGame')
+    const result = await getClient(leagueKey).from(LEAGUES[leagueKey].gameTable)
       .update({ played: true })
       .eq('id', game.id)
       .select('id, played');
 
     if (result?.error) throw result.error;
+    if (leagueKey !== state.activeLeague) return;
     if (!result?.data?.length) {
       throw new Error('No row was updated. Check anonymous database UPDATE permissions and the game ID.');
     }
@@ -504,6 +674,7 @@ async function markGamePlayed(gameId, button) {
     renderGames();
     setStatus('Game marked as played.', 'success');
   } catch (error) {
+    if (leagueKey !== state.activeLeague) return;
     console.error('Could not mark game as played:', error);
     setStatus('Could not mark the game as played. Check anonymous database UPDATE permissions for the played column.', 'error');
     button.disabled = false;
@@ -511,6 +682,7 @@ async function markGamePlayed(gameId, button) {
 }
 
 async function markFilteredGamesPlayed() {
+  const leagueKey = state.activeLeague;
   const filters = {
     season: els.season.value,
     region: els.region.value,
@@ -518,7 +690,7 @@ async function markFilteredGamesPlayed() {
   };
   const scopeDescription = [
     `Season: ${filters.season || 'all'}`,
-    `Region: ${filters.region || 'all'}`,
+    `${LEAGUES[leagueKey].scopeLabel ?? 'Region'}: ${filters.region || 'all'}`,
     `Round: ${filters.round ? `Round ${filters.round}` : 'all'}`,
   ].join('\n');
 
@@ -528,17 +700,18 @@ async function markFilteredGamesPlayed() {
 
   els.markFilteredPlayed.disabled = true;
   try {
-    let update = client.from('RegionalGame')
+    let update = getClient(leagueKey).from(LEAGUES[leagueKey].gameTable)
       .update({ played: true })
       .eq('played', false);
     if (filters.season) update = update.eq('season_id', filters.season);
-    if (filters.region) update = update.eq('region', filters.region);
+    if (filters.region) update = update.eq(LEAGUES[leagueKey].gameScopeField ?? 'region', filters.region);
     if (filters.round) update = update.eq('round', filters.round);
 
     const result = await update.select('id');
     if (result?.error) throw result.error;
+    if (leagueKey !== state.activeLeague) return;
     if (!result?.data?.length) {
-      setStatus('No unplayed games matched those season, region, and round filters.', 'notice');
+      setStatus(`No unplayed games matched those season, ${LEAGUES[leagueKey].scopeLabel?.toLowerCase() ?? 'region'}, and round filters.`, 'notice');
       return;
     }
 
@@ -550,6 +723,7 @@ async function markFilteredGamesPlayed() {
     renderGames();
     setStatus('All matching unplayed games were marked as played.', 'success');
   } catch (error) {
+    if (leagueKey !== state.activeLeague) return;
     console.error('Could not mark matching games as played:', error);
     setStatus('Could not update matching games. Check anonymous database UPDATE permissions for the played column.', 'error');
   } finally {
@@ -558,6 +732,13 @@ async function markFilteredGamesPlayed() {
 }
 
 function wireEvents() {
+  els.leagueNav.forEach((button) => {
+    button.addEventListener('click', () => selectLeague(button.dataset.league));
+  });
+  window.addEventListener('hashchange', () => {
+    const leagueKey = window.location.hash.slice(1);
+    selectLeague(LEAGUES[leagueKey] ? leagueKey : 'football');
+  });
   els.resultsNav.addEventListener('click', () => showPage('results'));
   els.standingsNav.addEventListener('click', () => showPage('standings'));
   [els.standingsSeason, els.standingsRegion, els.standingsSort, els.standingsDirection]
@@ -566,7 +747,7 @@ function wireEvents() {
   els.team.addEventListener('input', renderGames);
 
   $('#clear-filters').addEventListener('click', () => {
-    els.season.value = '';
+    els.season.value = [...els.season.options].some((option) => option.value === '1') ? '1' : '';
     els.region.value = '';
     els.round.value = '';
     els.played.value = '';
@@ -614,7 +795,8 @@ function wireEvents() {
 
 async function init() {
   wireEvents();
-  await loadData();
+  const requestedLeague = window.location.hash.slice(1);
+  await selectLeague(LEAGUES[requestedLeague] ? requestedLeague : 'football');
 }
 
 init();

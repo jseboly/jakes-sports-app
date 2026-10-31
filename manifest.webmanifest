@@ -1,7 +1,7 @@
 {
   "name": "Sports Results",
   "short_name": "Sports Results",
-  "description": "Browse sports games and results by season, region, and round.",
+  "description": "Browse football and baseball games, results, and standings by season, region, and round.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

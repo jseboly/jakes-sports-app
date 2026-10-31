@@ -1,42 +1,46 @@
 -- SECURITY CHECKLIST ONLY — not a ready-to-run migration.
--- Public editing means any anonymous visitor can update the allowed RegionalGame
--- columns on any row. Do not enable this unless unrestricted public writes are intended.
+-- Public editing means any anonymous visitor can update the allowed columns on any row
+-- in the configured game tables. Do not enable this unless unrestricted public writes are intended.
 -- Review current grants, RLS policies, and API roles first.
 -- Do not execute blindly: role names and current policies vary by Neon configuration.
 --
 -- Desired end state:
--- 1. Anonymous/public role: SELECT on public."RegionalGame", public."TeamSeason",
---    and public."RegionalTeamsFullView".
+-- 1. Anonymous/public role: SELECT on public."RegionalGame", public."NationalGame",
+--    public."TeamSeason", public."Team", public."RegionalTeamsFullView", and
+--    public."NationalTeamsFullView". Grant only on tables/views that exist in the project.
 -- 2. Anonymous/public role: UPDATE only on played, override_h_score, and override_v_score
---    in public."RegionalGame".
--- 3. RLS permits the anonymous role to update any RegionalGame row. This is intentionally
+--    in public."RegionalGame" and public."NationalGame".
+-- 3. RLS permits the anonymous role to update any game row. This is intentionally
 --    unrestricted by user identity; anyone who can reach the app can change these values.
 -- 4. No INSERT or DELETE privileges for app-facing roles.
--- 5. public."TeamSeason" is read-only through this application.
+-- 5. public."TeamSeason" and public."Team" are read-only through this application.
 -- 6. Confirm the Data API role names and exposed tables in this project.
 --
 -- Before making changes, inspect:
 --   SELECT grantee, table_schema, table_name, privilege_type
 --   FROM information_schema.role_table_grants
 --   WHERE table_schema = 'public'
---     AND table_name IN ('RegionalGame', 'TeamSeason', 'RegionalTeamsFullView')
+--     AND table_name IN (
+--       'RegionalGame', 'NationalGame', 'TeamSeason', 'Team',
+--       'RegionalTeamsFullView', 'NationalTeamsFullView'
+--     )
 --   ORDER BY table_name, grantee, privilege_type;
 --
 -- Inspect column privileges:
 --   SELECT grantee, table_name, column_name, privilege_type
 --   FROM information_schema.column_privileges
 --   WHERE table_schema = 'public'
---     AND table_name = 'RegionalGame'
+--     AND table_name IN ('RegionalGame', 'NationalGame')
 --   ORDER BY grantee, column_name, privilege_type;
 --
 -- Inspect RLS:
 --   SELECT schemaname, tablename, rowsecurity, forcerowsecurity
 --   FROM pg_tables
 --   WHERE schemaname = 'public'
---     AND tablename IN ('RegionalGame', 'TeamSeason');
+--     AND tablename IN ('RegionalGame', 'NationalGame', 'TeamSeason');
 --
 -- Inspect policies:
 --   SELECT schemaname, tablename, policyname, roles, cmd, qual, with_check
 --   FROM pg_policies
 --   WHERE schemaname = 'public'
---     AND tablename IN ('RegionalGame', 'TeamSeason');
+--     AND tablename IN ('RegionalGame', 'NationalGame', 'TeamSeason');

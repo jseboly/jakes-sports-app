@@ -22,6 +22,7 @@ button:disabled { cursor: wait; opacity: .65; }
 .app-shell { max-width: 1180px; margin: 0 auto; padding: 26px 24px 18px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 .page-nav { display: flex; gap: 8px; margin: -12px 0 24px; border-bottom: 1px solid var(--line); }
+.league-nav { flex-wrap: wrap; }
 .page-nav-button { color: var(--muted); background: transparent; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; font-size: .9rem; font-weight: 700; }
 .page-nav-button:hover, .page-nav-button.is-active { color: var(--teal); }
 .page-nav-button.is-active { border-bottom-color: var(--teal); }

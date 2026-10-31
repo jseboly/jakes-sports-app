@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#142b3b" />
-    <meta name="description" content="Browse regional sports results by season, region, round, and team." />
+    <meta name="description" content="Browse football and baseball results and standings by season, region, round, and team." />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <title>Sports Results</title>
@@ -13,14 +13,19 @@
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">RESULTS TRACKER</p>
-          <h1>Sports results</h1>
-          <p class="subtitle">Browse games by season, region, and round.</p>
+          <p id="app-label" class="eyebrow">SPORTS TRACKER</p>
+          <h1 id="app-title">Football results</h1>
+          <p id="app-subtitle" class="subtitle">Browse games and standings by season, region, and round.</p>
         </div>
         <div class="account-area">
           <span class="account-label">Public editing enabled</span>
         </div>
       </header>
+      <nav class="page-nav league-nav" aria-label="League">
+        <button class="page-nav-button is-active" type="button" data-league="football" aria-current="page">Football</button>
+        <button class="page-nav-button" type="button" data-league="baseball-regional">Baseball-Regional</button>
+        <button class="page-nav-button" type="button" data-league="baseball-national">Baseball-National</button>
+      </nav>
       <nav class="page-nav" aria-label="Main navigation">
         <button id="results-nav" class="page-nav-button is-active" type="button" aria-current="page">Results</button>
         <button id="standings-nav" class="page-nav-button" type="button">Standings</button>
@@ -40,7 +45,7 @@
               <label>Season
                 <select id="season-filter"><option value="">All seasons</option></select>
               </label>
-              <label>Region
+              <label><span id="game-scope-label">Region</span>
                 <select id="region-filter"><option value="">All regions</option></select>
               </label>
               <label>Round
@@ -93,7 +98,7 @@
               <label>Season
                 <select id="standings-season-filter"><option value="">All seasons</option></select>
               </label>
-              <label>Region
+              <label><span id="standings-scope-label">Region</span>
                 <select id="standings-region-filter"><option value="">All regions</option></select>
               </label>
             </div>
@@ -106,7 +111,7 @@
                 <option value="region">Region</option>
                 <option value="season_id">Season</option>
                 <option value="rating">Rating</option>
-                <option value="proxy">Proxy</option>
+                <option id="proxy-sort" value="proxy">Proxy</option>
                 <option value="wins">Wins</option>
                 <option value="losses">Losses</option>
               </select>
@@ -125,9 +130,9 @@
                 <tr>
                   <th scope="col">Season</th>
                   <th scope="col">Team</th>
-                  <th scope="col">Region</th>
+                  <th id="standings-scope-header" scope="col">Region</th>
                   <th scope="col">Rating</th>
-                  <th scope="col">Proxy</th>
+                  <th id="proxy-header" scope="col">Proxy</th>
                   <th scope="col">Wins</th>
                   <th scope="col">Losses</th>
                 </tr>
@@ -138,7 +143,7 @@
         </section>
 
         <footer class="footer">
-          <span>Sports Results</span>
+          <span id="app-footer">Football Results</span>
           <span id="last-updated"></span>
         </footer>
       </main>
