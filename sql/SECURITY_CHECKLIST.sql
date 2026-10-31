@@ -1,0 +1,32 @@
+-- SECURITY CHECKLIST ONLY — not a ready-to-run migration.
+-- Review current grants, RLS policies, API roles, and Neon Auth identity helpers first.
+-- Do not execute blindly: role names and current policies vary by Neon configuration.
+--
+-- Desired end state:
+-- 1. Anonymous/public role: SELECT only on public."RegionalGame" and public."Teams".
+-- 2. Authenticated role: SELECT on both tables.
+-- 3. Only the intended editor role/user can UPDATE public."RegionalGame".
+-- 4. Column-level UPDATE privileges only for override_h_score and override_v_score.
+-- 5. No INSERT or DELETE privileges for the app-facing roles.
+-- 6. RLS policies restrict UPDATE to auth.uid() =
+--    'd4e58c53-073d-4906-9b35-015b2f5c2835'::uuid.
+-- 7. Confirm Neon Auth identity helper, JWT mapping, and API role names in this project.
+--
+-- Before making changes, inspect:
+--   SELECT grantee, table_schema, table_name, privilege_type
+--   FROM information_schema.role_table_grants
+--   WHERE table_schema = 'public'
+--     AND table_name IN ('RegionalGame', 'Teams')
+--   ORDER BY table_name, grantee, privilege_type;
+--
+-- Inspect RLS:
+--   SELECT schemaname, tablename, rowsecurity, forcerowsecurity
+--   FROM pg_tables
+--   WHERE schemaname = 'public'
+--     AND tablename IN ('RegionalGame', 'Teams');
+--
+-- Inspect policies:
+--   SELECT schemaname, tablename, policyname, roles, cmd, qual, with_check
+--   FROM pg_policies
+--   WHERE schemaname = 'public'
+--     AND tablename IN ('RegionalGame', 'Teams');
