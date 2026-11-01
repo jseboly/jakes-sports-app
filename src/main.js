@@ -122,6 +122,8 @@ const els = {
   scoreError: $('#score-error'),
   scoreSave: $('#score-save'),
   markFilteredPlayed: $('#mark-filtered-played'),
+  markThroughRoundPlayed: $('#mark-through-round-played'),
+  markThroughRoundSeparator: $('#mark-through-round-separator'),
   resultsNav: $('#results-nav'),
   standingsNav: $('#standings-nav'),
   resultsPage: $('#results-page'),
@@ -412,6 +414,8 @@ async function selectLeague(leagueKey, updateHash = true) {
   els.season.value = '';
   els.region.value = '';
   els.round.value = '';
+  els.markThroughRoundPlayed.hidden = true;
+  els.markThroughRoundSeparator.hidden = true;
   els.played.value = '';
   els.team.value = '';
   els.standingsSeason.value = '';
@@ -601,6 +605,15 @@ function gameCard(game) {
   const homeWon = score.winner === 'home';
   const visitorWon = score.winner === 'visitor';
   const isDraw = LEAGUES[state.activeLeague].hasDraws && score.winner === 'tie';
+  const teams = LEAGUES[state.activeLeague].hasDraws
+    ? [
+      { name: homeName, score: score.home, winner: homeWon },
+      { name: visitorName, score: score.visitor, winner: visitorWon },
+    ]
+    : [
+      { name: visitorName, score: score.visitor, winner: visitorWon },
+      { name: homeName, score: score.home, winner: homeWon },
+    ];
   const playedLabel = game.played === true ? 'Played' : 'Not marked played';
   const markPlayedAction = game.played === true
     ? ''
@@ -613,14 +626,11 @@ function gameCard(game) {
         <span class="game-status ${game.played === true ? 'is-played' : ''}">${playedLabel}</span>
       </div>
       <div class="matchup">
-        <div class="team-line ${visitorWon ? 'winner' : ''} ${isDraw ? 'draw' : ''}">
-          <span class="team-name">${escapeHtml(visitorName)}</span>
-          <span class="team-score">${displayNumber(score.visitor, score.decimalPlaces)}</span>
-        </div>
-        <div class="team-line ${homeWon ? 'winner' : ''} ${isDraw ? 'draw' : ''}">
-          <span class="team-name">${escapeHtml(homeName)}</span>
-          <span class="team-score">${displayNumber(score.home, score.decimalPlaces)}</span>
-        </div>
+        ${teams.map((team) => `
+          <div class="team-line ${team.winner ? 'winner' : ''} ${isDraw ? 'draw' : ''}">
+            <span class="team-name">${escapeHtml(team.name)}</span>
+            <span class="team-score">${displayNumber(team.score, score.decimalPlaces)}</span>
+          </div>`).join('')}
       </div>
       <div class="card-bottom">
         <span class="score-type">${isDraw ? '<span class="draw-result">Draw</span> · ' : ''}${escapeHtml(score.label)}</span>
@@ -633,6 +643,9 @@ function gameCard(game) {
 }
 
 function renderGames() {
+  const hasSelectedRound = Boolean(els.round.value);
+  els.markThroughRoundPlayed.hidden = !hasSelectedRound;
+  els.markThroughRoundSeparator.hidden = !hasSelectedRound;
   const games = filteredGames();
   const groups = groupByRound(games);
   const roundCount = groups.length;
@@ -819,6 +832,63 @@ async function markFilteredGamesPlayed() {
   }
 }
 
+async function markGamesThroughSelectedRoundPlayed() {
+  const round = els.round.value;
+  if (!round) return;
+
+  const leagueKey = state.activeLeague;
+  const config = LEAGUES[leagueKey];
+  const scopeField = config.gameScopeField ?? 'region';
+  const filters = {
+    season: els.season.value,
+    region: els.region.value,
+    round,
+  };
+  const selectedScope = filters.region || `all ${config.scopeLabel?.toLowerCase() ?? 'regions'}`;
+  const description = [
+    `Season: ${filters.season || 'all'}`,
+    `${config.scopeLabel ?? 'Region'}: ${selectedScope}`,
+    `Rounds: through Round ${round} (inclusive)`,
+  ].join('\n');
+
+  if (!window.confirm(
+    `Mark every unplayed game through the selected round as played?\n\n${description}\n\nThis applies to database rows beyond the currently displayed games, if any.`,
+  )) return;
+
+  els.markThroughRoundPlayed.disabled = true;
+  try {
+    let update = getClient(leagueKey).from(config.gameTable)
+      .update({ played: true })
+      .eq('played', false)
+      .lte('round', round);
+    if (filters.season) update = update.eq('season_id', filters.season);
+    if (filters.region) update = update.eq(scopeField, filters.region);
+
+    const result = await update.select('id');
+    if (result?.error) throw result.error;
+    if (leagueKey !== state.activeLeague) return;
+    if (!result?.data?.length) {
+      setStatus(`No unplayed games matched those season, ${config.scopeLabel?.toLowerCase() ?? 'region'}, and round filters.`, 'notice');
+      return;
+    }
+
+    const updatedIds = new Set(result.data.map((game) => String(game.id)));
+    state.games = state.games.map((game) => (
+      updatedIds.has(String(game.id))
+        ? { ...game, played: true }
+        : game
+    ));
+    renderGames();
+    setStatus(`All matching unplayed games through Round ${round} were marked as played.`, 'success');
+  } catch (error) {
+    if (leagueKey !== state.activeLeague) return;
+    console.error('Could not mark games through the selected round as played:', error);
+    setStatus('Could not update games through the selected round. Check anonymous database UPDATE permissions for the played column.', 'error');
+  } finally {
+    els.markThroughRoundPlayed.disabled = false;
+  }
+}
+
 function wireEvents() {
   els.leagueNav.forEach((button) => {
     button.addEventListener('click', () => selectLeague(button.dataset.league));
@@ -884,6 +954,7 @@ function wireEvents() {
   $('#score-close').addEventListener('click', () => els.scoreDialog.close());
   $('#score-cancel').addEventListener('click', () => els.scoreDialog.close());
   els.markFilteredPlayed.addEventListener('click', markFilteredGamesPlayed);
+  els.markThroughRoundPlayed.addEventListener('click', markGamesThroughSelectedRoundPlayed);
   els.scoreForm.addEventListener('submit', saveScoreOverrides);
 }
 

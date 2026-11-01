@@ -56,7 +56,7 @@ Open the local URL printed by Vite.
 - Soccer displays a draw when both actual score overrides are equal; baseball and football do not display draws.
 - Only one override populated: label the result “Incomplete override” and do not mark a winner until both actual scores are entered.
 - Anyone can edit a game's `override_h_score` and `override_v_score`, or mark that game as played. The app does not update performance values or other columns.
-- The batch action marks all unplayed database rows matching the selected season, region/tier, and round filters as played. It asks for confirmation and ignores the game-status and team-name filters.
+- The batch action marks all unplayed database rows matching the selected season, region/tier, and round filters as played. A second action appears when a round is selected and marks unplayed games in the selected season and region/tier through that round, inclusive. Both actions ask for confirmation, update matching database rows (including rows beyond those currently displayed), and ignore the game-status and team-name filters.
 
 ## Public database access
 
