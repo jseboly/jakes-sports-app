@@ -60,7 +60,7 @@ Open the local URL printed by Vite.
 
 ## Public database access
 
-The Neon SDK uses anonymous access to call the Data API; this does not authenticate or identify editors. Check Neon Auth allowed origins and the anonymous database grants/policies for both local development and the deployed GitHub Pages URL. Ensure each configured game's table, `TeamSeason`, and standings view are exposed to the Data API and have the required anonymous permissions. Baseball and soccer also require `Team` to be exposed with anonymous `SELECT`.
+The app obtains an anonymous token from each league's Neon Auth endpoint and supplies it to that league's Data API client. Tokens are cached separately by Auth URL because the leagues use different Neon projects. This does not authenticate or identify editors. Check Neon Auth allowed origins and the anonymous database grants/policies for both local development and the deployed GitHub Pages URL. Ensure each configured game's table, `TeamSeason`, and standings view are exposed to the Data API and have the required anonymous permissions. Baseball and soccer also require `Team` to be exposed with anonymous `SELECT`.
 
 ## Deploy to GitHub Pages
 

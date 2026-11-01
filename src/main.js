@@ -81,6 +81,26 @@ const LEAGUES = {
 };
 
 const clients = new Map();
+const anonymousTokens = new Map();
+
+async function getAnonymousToken(authUrl) {
+  const cached = anonymousTokens.get(authUrl);
+  if (cached && cached.expiresAt > Date.now() / 1000 + 30) return cached.token;
+
+  const response = await fetch(`${authUrl.replace(/\/$/, '')}/token/anonymous`);
+  if (!response.ok) {
+    throw new Error(`Neon Auth anonymous token request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const result = await response.json();
+  if (typeof result.token !== 'string' || typeof result.expires_at !== 'number') {
+    throw new Error('Neon Auth returned an invalid anonymous token response.');
+  }
+
+  anonymousTokens.set(authUrl, { token: result.token, expiresAt: result.expires_at });
+  return result.token;
+}
+
 function getClient(leagueKey) {
   if (!clients.has(leagueKey)) {
     const config = LEAGUES[leagueKey];
@@ -88,8 +108,10 @@ function getClient(leagueKey) {
       .replace('.apirest.', '.neonauth.')
       .replace(/\/rest\/v1\/?$/, '/auth');
     clients.set(leagueKey, createClient({
-      auth: { url: authUrl, allowAnonymous: true },
-      dataApi: { url: config.dataApiUrl },
+      dataApi: {
+        url: config.dataApiUrl,
+        getToken: () => getAnonymousToken(authUrl),
+      },
     }));
   }
   return clients.get(leagueKey);
