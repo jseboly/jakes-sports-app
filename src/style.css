@@ -93,10 +93,13 @@ input:focus, select:focus { border-color: #399a91; box-shadow: 0 0 0 3px rgba(14
 .matchup { margin: 11px 0 10px; display: grid; gap: 3px; }
 .team-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 8px; border-radius: 7px; }
 .team-line.winner { background: var(--teal-soft); color: #0b6158; }
+.team-line.draw { background: #fff5dc; color: #775719; }
 .team-name { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
 .team-line.winner .team-name::before { content: '✓ '; font-size: .72rem; }
+.team-line.draw .team-name::before { content: '= '; font-size: .78rem; font-weight: 800; }
 .team-score { flex: 0 0 auto; font-family: Manrope, sans-serif; font-size: 1.02rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .score-type { color: #7c8d94; font-size: .68rem; }
+.draw-result { color: #775719; font-weight: 800; }
 .game-actions { display: flex; align-items: center; gap: 5px; }
 .edit-game { color: var(--teal); background: transparent; border: 0; border-radius: 6px; padding: 5px 6px; font-size: .74rem; font-weight: 800; }
 .edit-game:hover { background: var(--teal-soft); }

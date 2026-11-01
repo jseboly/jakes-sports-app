@@ -11,6 +11,7 @@ const LEAGUES = {
     teamTable: 'TeamSeason',
     standingsTable: 'RegionalTeamsFullView',
     hasProxy: true,
+    defaultRegion: '1N',
   },
   'baseball-regional': {
     label: 'Baseball-Regional',
@@ -18,8 +19,12 @@ const LEAGUES = {
     dataApiUrl: 'https://ep-super-bird-aebryt44.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
     gameTable: 'RegionalGame',
     teamTable: 'TeamSeason',
+    teamNamesTable: 'Team',
     standingsTable: 'RegionalTeamsFullView',
+    teamNameIdField: 'team_id',
+    teamSeasonHasName: false,
     hasProxy: false,
+    defaultRegion: '1N',
   },
   'baseball-national': {
     label: 'Baseball-National',
@@ -36,6 +41,42 @@ const LEAGUES = {
     scopeLabel: 'Tier',
     teamSeasonHasName: false,
     hasProxy: false,
+  },
+  'soccer-regional': {
+    label: 'Soccer-Regional',
+    title: 'Soccer-Regional results',
+    dataApiUrl: 'https://ep-fragrant-bush-ae30i2ri.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
+    gameTable: 'RegionalGame',
+    teamTable: 'TeamSeason',
+    teamNamesTable: 'Team',
+    standingsTable: 'RegionalTeamsFullView',
+    teamNameIdField: 'team_id',
+    teamSeasonHasName: false,
+    hasProxy: true,
+    hasStadium: true,
+    hasDraws: true,
+    standingsPrimaryField: 'points',
+    defaultSeason: '2',
+    defaultRegion: '1N',
+  },
+  'soccer-national': {
+    label: 'Soccer-National',
+    title: 'Soccer-National results',
+    dataApiUrl: 'https://ep-fragrant-bush-ae30i2ri.apirest.c-2.us-east-2.aws.neon.tech/neondb/rest/v1',
+    gameTable: 'NationalGame',
+    teamTable: 'TeamSeason',
+    teamNamesTable: 'Team',
+    standingsTable: 'NationalTeamsFullView',
+    gameTeamIdField: 'nat_id',
+    teamNameIdField: 'team_id',
+    gameScopeField: 'tier',
+    standingsScopeField: 'tier',
+    scopeLabel: 'Tier',
+    teamSeasonHasName: false,
+    hasProxy: true,
+    hasStadium: true,
+    hasDraws: true,
+    standingsPrimaryField: 'points',
   },
 };
 
@@ -98,6 +139,14 @@ const els = {
   appFooter: $('#app-footer'),
   proxyHeader: $('#proxy-header'),
   proxySort: $('#proxy-sort'),
+  stadiumHeader: $('#stadium-header'),
+  pointsHeader: $('#points-header'),
+  winsHeader: $('#wins-header'),
+  lossesHeader: $('#losses-header'),
+  winsSort: $('#wins-sort'),
+  lossesSort: $('#losses-sort'),
+  pointsSort: $('#points-sort'),
+  defaultSort: $('#default-sort'),
   gameScopeLabel: $('#game-scope-label'),
   standingsScopeLabel: $('#standings-scope-label'),
   standingsScopeHeader: $('#standings-scope-header'),
@@ -229,11 +278,12 @@ function compareStandingsValues(left, right, direction) {
 }
 
 function getStandingsSortKeys() {
+  const { standingsPrimaryField = 'wins' } = LEAGUES[state.activeLeague];
   const selectedSort = els.standingsSort.value;
   if (selectedSort === 'default') {
     return [
       { key: 'season_id', direction: 'desc' },
-      { key: 'wins', direction: 'desc' },
+      { key: standingsPrimaryField, direction: 'desc' },
       { key: 'rating', direction: 'desc' },
     ];
   }
@@ -242,7 +292,7 @@ function getStandingsSortKeys() {
     { key: selectedSort, direction: els.standingsDirection.value },
     ...[
       { key: 'season_id', direction: 'desc' },
-      { key: 'wins', direction: 'desc' },
+      { key: standingsPrimaryField, direction: 'desc' },
       { key: 'rating', direction: 'desc' },
     ].filter(({ key }) => key !== selectedSort),
   ];
@@ -268,7 +318,9 @@ function filteredStandings() {
 function renderStandings() {
   const standings = filteredStandings();
   const config = LEAGUES[state.activeLeague];
-  const { hasProxy } = config;
+  const { hasProxy, hasStadium, standingsPrimaryField = 'wins' } = config;
+  const columnCount = 4 + Number(hasProxy) + Number(hasStadium)
+    + (standingsPrimaryField === 'points' ? 1 : 2);
   els.standingsSummary.textContent = `${standings.length} team${standings.length === 1 ? '' : 's'}`;
   els.standingsDirection.disabled = els.standingsSort.value === 'default';
   els.standingsRows.innerHTML = standings.length
@@ -279,10 +331,12 @@ function renderStandings() {
         <td>${escapeHtml(team.region ?? '—')}</td>
         <td>${escapeHtml(displayNumber(team.rating))}</td>
         ${hasProxy ? `<td>${escapeHtml(displayNumber(team.proxy))}</td>` : ''}
-        <td>${escapeHtml(displayNumber(team.wins))}</td>
-        <td>${escapeHtml(displayNumber(team.losses))}</td>
+        ${hasStadium ? `<td>${escapeHtml(team.stadium ?? '—')}</td>` : ''}
+        ${standingsPrimaryField === 'points'
+          ? `<td>${escapeHtml(displayNumber(team.points))}</td>`
+          : `<td>${escapeHtml(displayNumber(team.wins))}</td><td>${escapeHtml(displayNumber(team.losses))}</td>`}
       </tr>`).join('')
-    : `<tr><td class="table-empty" colspan="${hasProxy ? 7 : 6}">No teams match these filters.</td></tr>`;
+    : `<tr><td class="table-empty" colspan="${columnCount}">No teams match these filters.</td></tr>`;
 }
 
 async function loadStandings(leagueKey = state.activeLeague) {
@@ -293,12 +347,13 @@ async function loadStandings(leagueKey = state.activeLeague) {
   els.standingsStatus.className = 'status-message';
   els.standingsStatus.hidden = false;
   try {
+    const standingsPrimaryField = config.standingsPrimaryField ?? 'wins';
     const result = await client.from(config.standingsTable)
-      .select(config.gameScopeField ? '*' : (config.hasProxy
+      .select(config.gameScopeField || config.hasStadium ? '*' : (config.hasProxy
         ? 'season_id, name, region, rating, proxy, wins, losses'
         : 'season_id, name, region, rating, wins, losses'))
       .order('season_id', { ascending: false })
-      .order('wins', { ascending: false })
+      .order(standingsPrimaryField, { ascending: false })
       .order('rating', { ascending: false });
 
     if (result?.error) throw result.error;
@@ -320,8 +375,14 @@ async function loadStandings(leagueKey = state.activeLeague) {
       .sort((a, b) => compareStandingsValues(a, b, 'desc'));
     const regions = [...new Set(state.standings.map((team) => team.region).filter(Boolean))]
       .sort((a, b) => String(a).localeCompare(String(b)));
-    populateSelect(els.standingsSeason, seasons, 'All seasons', (value) => value, '1');
-    populateSelect(els.standingsRegion, regions, `All ${config.scopeLabel?.toLowerCase() ?? 'regions'}`);
+    populateSelect(els.standingsSeason, seasons, 'All seasons', (value) => value, config.defaultSeason ?? '1');
+    populateSelect(
+      els.standingsRegion,
+      regions,
+      `All ${config.scopeLabel?.toLowerCase() ?? 'regions'}`,
+      (value) => value,
+      config.defaultRegion ?? null,
+    );
 
     els.standingsStatus.textContent = '';
     els.standingsStatus.hidden = true;
@@ -355,7 +416,10 @@ async function selectLeague(leagueKey, updateHash = true) {
   els.team.value = '';
   els.standingsSeason.value = '';
   els.standingsRegion.value = '';
-  if (!LEAGUES[leagueKey].hasProxy && els.standingsSort.value === 'proxy') {
+  if ((!LEAGUES[leagueKey].hasProxy && els.standingsSort.value === 'proxy')
+    || (LEAGUES[leagueKey].standingsPrimaryField !== 'points' && els.standingsSort.value === 'points')
+    || (LEAGUES[leagueKey].standingsPrimaryField === 'points'
+      && ['wins', 'losses'].includes(els.standingsSort.value))) {
     els.standingsSort.value = 'default';
   }
 
@@ -372,6 +436,16 @@ async function selectLeague(leagueKey, updateHash = true) {
   [...els.standingsSort.options].find((option) => option.value === 'region').textContent = config.scopeLabel ?? 'Region';
   els.proxyHeader.hidden = !config.hasProxy;
   els.proxySort.hidden = !config.hasProxy;
+  els.stadiumHeader.hidden = !config.hasStadium;
+  els.pointsHeader.hidden = config.standingsPrimaryField !== 'points';
+  els.winsHeader.hidden = config.standingsPrimaryField === 'points';
+  els.lossesHeader.hidden = config.standingsPrimaryField === 'points';
+  els.pointsSort.hidden = config.standingsPrimaryField !== 'points';
+  els.winsSort.hidden = config.standingsPrimaryField === 'points';
+  els.lossesSort.hidden = config.standingsPrimaryField === 'points';
+  els.defaultSort.textContent = config.standingsPrimaryField === 'points'
+    ? 'Default order (season, points, rating)'
+    : 'Default order (season, wins, rating)';
   els.leagueNav.forEach((button) => {
     const isActive = button.dataset.league === leagueKey;
     button.classList.toggle('is-active', isActive);
@@ -421,8 +495,15 @@ function populateFilters() {
     .sort((a, b) => String(a).localeCompare(String(b)));
   const rounds = [...new Set(state.games.map((game) => game.round).filter((v) => v !== null))]
     .sort((a, b) => Number(a) - Number(b));
-  populateSelect(els.season, seasons, 'All seasons', (value) => value, '1');
-  populateSelect(els.region, regions, `All ${LEAGUES[state.activeLeague].scopeLabel?.toLowerCase() ?? 'regions'}`);
+  const config = LEAGUES[state.activeLeague];
+  populateSelect(els.season, seasons, 'All seasons', (value) => value, config.defaultSeason ?? '1');
+  populateSelect(
+    els.region,
+    regions,
+    `All ${config.scopeLabel?.toLowerCase() ?? 'regions'}`,
+    (value) => value,
+    config.defaultRegion ?? null,
+  );
   populateSelect(els.round, rounds, 'All rounds', (value) => `Round ${value}`);
 }
 
@@ -449,6 +530,7 @@ function filteredGames() {
 }
 
 function scoreInfo(game) {
+  const { hasDraws } = LEAGUES[state.activeLeague];
   const homeOverride = toNumberOrNull(game.override_h_score);
   const visitorOverride = toNumberOrNull(game.override_v_score);
   const homePerf = toNumberOrNull(game.h_perf);
@@ -468,7 +550,9 @@ function scoreInfo(game) {
   if (homeOverride !== null && visitorOverride !== null) {
     return {
       home: homeOverride, visitor: visitorOverride, label: 'Actual score',
-      winner: homeOverride === visitorOverride ? 'tie' : homeOverride > visitorOverride ? 'home' : 'visitor',
+      winner: homeOverride === visitorOverride && hasDraws
+        ? 'tie'
+        : homeOverride > visitorOverride ? 'home' : homeOverride < visitorOverride ? 'visitor' : null,
     };
   }
   if (homeOverride === null && visitorOverride === null) {
@@ -482,8 +566,11 @@ function scoreInfo(game) {
       : visitorPerf + visitorRating;
     return {
       home: homeAdjusted, visitor: visitorAdjusted, decimalPlaces: 1, label: 'Performance + rating',
-      winner: homeAdjusted === null || visitorAdjusted === null ? null :
-        homeAdjusted === visitorAdjusted ? 'tie' : homeAdjusted > visitorAdjusted ? 'home' : 'visitor',
+      winner: homeAdjusted === null || visitorAdjusted === null
+        ? null
+        : hasDraws && Math.abs(homeAdjusted - visitorAdjusted) <= 5
+          ? 'tie'
+          : homeAdjusted > visitorAdjusted ? 'home' : homeAdjusted < visitorAdjusted ? 'visitor' : null,
     };
   }
   // A partially populated override is treated as incomplete rather than inventing a final result.
@@ -513,6 +600,7 @@ function gameCard(game) {
   const score = scoreInfo(game);
   const homeWon = score.winner === 'home';
   const visitorWon = score.winner === 'visitor';
+  const isDraw = LEAGUES[state.activeLeague].hasDraws && score.winner === 'tie';
   const playedLabel = game.played === true ? 'Played' : 'Not marked played';
   const markPlayedAction = game.played === true
     ? ''
@@ -525,17 +613,17 @@ function gameCard(game) {
         <span class="game-status ${game.played === true ? 'is-played' : ''}">${playedLabel}</span>
       </div>
       <div class="matchup">
-        <div class="team-line ${visitorWon ? 'winner' : ''}">
+        <div class="team-line ${visitorWon ? 'winner' : ''} ${isDraw ? 'draw' : ''}">
           <span class="team-name">${escapeHtml(visitorName)}</span>
           <span class="team-score">${displayNumber(score.visitor, score.decimalPlaces)}</span>
         </div>
-        <div class="team-line ${homeWon ? 'winner' : ''}">
+        <div class="team-line ${homeWon ? 'winner' : ''} ${isDraw ? 'draw' : ''}">
           <span class="team-name">${escapeHtml(homeName)}</span>
           <span class="team-score">${displayNumber(score.home, score.decimalPlaces)}</span>
         </div>
       </div>
       <div class="card-bottom">
-        <span class="score-type">${escapeHtml(score.label)}</span>
+        <span class="score-type">${isDraw ? '<span class="draw-result">Draw</span> · ' : ''}${escapeHtml(score.label)}</span>
         <div class="game-actions">
           ${markPlayedAction}
           <button class="edit-game" type="button" data-edit-id="${escapeHtml(game.id)}" aria-label="Edit score overrides for ${escapeHtml(homeName)} versus ${escapeHtml(visitorName)}">Edit score</button>
@@ -747,8 +835,14 @@ function wireEvents() {
   els.team.addEventListener('input', renderGames);
 
   $('#clear-filters').addEventListener('click', () => {
-    els.season.value = [...els.season.options].some((option) => option.value === '1') ? '1' : '';
-    els.region.value = '';
+    const config = LEAGUES[state.activeLeague];
+    const defaultSeason = config.defaultSeason ?? '1';
+    els.season.value = [...els.season.options].some((option) => option.value === defaultSeason)
+      ? defaultSeason
+      : '';
+    els.region.value = [...els.region.options].some((option) => option.value === config.defaultRegion)
+      ? config.defaultRegion
+      : '';
     els.round.value = '';
     els.played.value = '';
     els.team.value = '';
